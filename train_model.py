@@ -6,36 +6,32 @@ from sklearn.ensemble import RandomForestClassifier
 print("正在讀取原始數據...")
 df = pd.read_csv('archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv')
 
-# --- 2. 資料預處理 (確保與部署端一致) ---
-# 定義明確要丟棄的非特徵欄位
+# --- 2. 嚴格預處理 (所有資料對齊的核心) ---
+# 定義非特徵欄位（標籤與無關資訊）
 drop_cols = ['pkSeqID', 'saddr', 'daddr', 'sport', 'dport', 'attack', 'category', 'subcategory']
-# 只保留存在的欄位
-existing_drop_cols = [c for c in drop_cols if c in df.columns]
 
-# 處理文字欄位 (使用 factorize 替代 LabelEncoder 以簡化部署)
+# 遍歷所有欄位進行文字轉數字 (Encoding)
 for col in df.columns:
     if df[col].dtype == 'object':
         df[col] = pd.factorize(df[col].astype(str))[0]
 
-# 設定特徵 (X) 與標籤 (y)
-# 這裡以 'category' 為訓練目標
-X = df.drop(columns=existing_drop_cols)
+# 確保 X 只包含特徵，y 是目標
+X = df.drop(columns=[c for c in drop_cols if c in df.columns])
 y = df['category']
 
-# 紀錄精確的特徵順序清單
+# 紀錄這份名單，這就是「對齊」的標準
 feature_list = X.columns.tolist()
 
 # 3. 訓練模型
-print(f"正在訓練幾百萬筆數據 (特徵數: {len(feature_list)})...")
+print(f"訓練開始，特徵數量：{len(feature_list)}")
 model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
 model.fit(X, y)
 
-# --- 4. 打包匯出 (核心修正：將模型與特徵清單封裝) ---
+# --- 4. 打包匯出 ---
 model_package = {
     'model': model,
     'features': feature_list
 }
 joblib.dump(model_package, 'iot_model.pkl')
 
-print("✅ 模型與特徵清單匯出成功！檔案：iot_model.pkl")
-print(f"訓練特徵順序: {feature_list}")
+print("✅ 本地端訓練完成！請將 iot_model.pkl 上傳至 GitHub。")
