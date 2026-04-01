@@ -4,6 +4,8 @@ import pandas as pd
 import time
 import matplotlib.pyplot as plt
 import random
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="IoT 安全專案", layout="wide")
 
@@ -276,6 +278,8 @@ if not attack_pool:
 # 7. 即時監控區
 # -----------------------------
 st.subheader("即時監控模擬")
+st.write("Normal pool size:", len(normal_pool))
+st.write("Attack pool size:", len(attack_pool))
 
 summary_placeholder = st.empty()
 status_placeholder = st.empty()
@@ -351,7 +355,7 @@ if st.button("開始監控演示"):
         elif risk_level == "HIGH":
             high_count += 1
 
-        current_time = time.strftime("%H:%M:%S")
+        current_time = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%H:%M:%S")
         seq_value = get_seq_value(orig_row)
 
         if is_attack:
