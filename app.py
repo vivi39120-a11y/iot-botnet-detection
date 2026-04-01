@@ -52,7 +52,9 @@ except Exception as e:
 @st.cache_data
 def load_and_clean_data():
     df = pd.read_csv("archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv")
-    df = df.sample(n=5000)
+
+    # 從整份資料隨機抽 5000 筆，並重設索引
+    df = df.sample(n=5000, random_state=42).reset_index(drop=True)
     display_df = df.copy()
 
     X = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore").copy()
@@ -109,16 +111,9 @@ def safe_float(value):
 # 4. 模擬商業產品常見流程：規則初篩
 # -----------------------------
 def rule_based_screening(orig_row):
-    """
-    回傳:
-    - rule_score: 規則風險分數
-    - triggered_rules: 命中的規則列表
-    """
-
     triggered_rules = []
     rule_score = 0
 
-    # 可用欄位才檢查，避免子集欄位不齊時報錯
     dur = safe_float(orig_row["dur"]) if "dur" in orig_row.index else None
     rate = safe_float(orig_row["rate"]) if "rate" in orig_row.index else None
     srate = safe_float(orig_row["srate"]) if "srate" in orig_row.index else None
@@ -126,33 +121,27 @@ def rule_based_screening(orig_row):
     pkts = safe_float(orig_row["pkts"]) if "pkts" in orig_row.index else None
     bytes_ = safe_float(orig_row["bytes"]) if "bytes" in orig_row.index else None
 
-    # 規則 1：封包速率過高
     if rate is not None and rate > 1000:
         triggered_rules.append("High packet rate")
         rule_score += 2
 
-    # 規則 2：來源速率過高
     if srate is not None and srate > 1000:
         triggered_rules.append("High source rate")
         rule_score += 2
 
-    # 規則 3：目的速率過高
     if drate is not None and drate > 1000:
         triggered_rules.append("High destination rate")
         rule_score += 2
 
-    # 規則 4：封包數異常大
     if pkts is not None and pkts > 50:
         triggered_rules.append("Large packet count")
         rule_score += 1
 
-    # 規則 5：短時間大量流量
     if dur is not None and bytes_ is not None:
         if dur < 0.1 and bytes_ > 10000:
             triggered_rules.append("Burst traffic in short duration")
             rule_score += 2
 
-    # 規則 6：非常短連線但高封包
     if dur is not None and pkts is not None:
         if dur < 0.05 and pkts > 20:
             triggered_rules.append("Short duration with many packets")
@@ -162,13 +151,6 @@ def rule_based_screening(orig_row):
 
 
 def get_risk_level(rule_score, is_attack, triggered_rules):
-    """
-    風險分級：
-    - High: 規則命中明顯 + 模型判攻擊
-    - Medium: 模型判攻擊 或 規則偏高
-    - Low: 有輕微異常
-    - Normal: 無明顯異常
-    """
     if is_attack and rule_score >= 2:
         return "HIGH"
     if is_attack:
@@ -317,7 +299,6 @@ if st.button("開始監控演示"):
         burst_start, burst_end = -1, -1
 
     for i in range(int(num_samples)):
-        # 模擬一般情況 + 攻擊爆發時段
         if burst_mode and burst_start <= i < burst_end:
             use_attack = random.random() < 0.75
         else:
@@ -325,8 +306,9 @@ if st.button("開始監控演示"):
 
         idx = random.choice(attack_pool if use_attack else normal_pool)
 
-        row = processed_df.loc[idx]
-        orig_row = display_df.loc[idx]
+        # 用 iloc 依位置取值，避免 KeyError
+        row = processed_df.iloc[idx]
+        orig_row = display_df.iloc[idx]
 
         input_data = row.values.reshape(1, -1)
         pred_encoded = model.predict(input_data)[0]
