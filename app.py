@@ -51,11 +51,8 @@ except Exception as e:
 # -----------------------------
 @st.cache_data
 def load_and_clean_data():
-    df = pd.read_csv(
-        "archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv",
-        nrows=5000
-    )
-
+    df = pd.read_csv("archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv")
+    df = df.sample(n=5000)
     display_df = df.copy()
 
     X = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore").copy()
