@@ -16,7 +16,9 @@ st.markdown("本系統基於 **隨機森林 (Random Forest)** 演算法，針對
 @st.cache_resource # 讓模型只訓練一次，避免網頁重整時卡頓
 def train_model():
     # 加上 nrows=50000 限制讀取行數，這能大幅節省記憶體並加快啟動速度
-    df = pd.read_csv('archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv'),sample(n=50000, random_state=42)
+    # 必須先讀入 df，再調用 .sample() 方法
+    df_full = pd.read_csv('archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv')
+    df = df_full.sample(n=50000)
     # 資料處理
     if 'proto' in df.columns: df['proto'] = pd.factorize(df['proto'])[0]
     if 'state' in df.columns: df['state'] = pd.factorize(df['state'])[0]
