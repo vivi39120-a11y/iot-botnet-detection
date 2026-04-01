@@ -45,16 +45,33 @@ except Exception as e:
     st.error(f"讀取模型失敗：{e}")
     st.stop()
 
+# -----------------------------
+# 2. 側邊欄
+# -----------------------------
+st.sidebar.header("控制面板")
+sim_speed = st.sidebar.slider("模擬速度（秒）", 0.1, 2.0, 0.5)
+num_samples = st.sidebar.number_input("樣本數", min_value=5, max_value=100, value=20, step=1)
+attack_ratio = st.sidebar.slider("模擬攻擊比例", min_value=0.05, max_value=0.50, value=0.15, step=0.05)
+burst_mode = st.sidebar.checkbox("啟用攻擊爆發模式", value=True)
+
+sample_size = st.sidebar.number_input("展示資料筆數", min_value=1000, max_value=20000, value=5000, step=1000)
+fixed_sample = st.sidebar.checkbox("固定展示抽樣", value=False)
+sample_seed = st.sidebar.number_input("固定抽樣種子", min_value=0, max_value=999999, value=42, step=1)
 
 # -----------------------------
-# 2. 載入並清理資料
+# 3. 載入並清理資料
 # -----------------------------
 @st.cache_data
-def load_and_clean_data():
+def load_and_clean_data(sample_size, fixed_sample, sample_seed):
     df = pd.read_csv("archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv")
 
-    # 從整份資料隨機抽 5000 筆，並重設索引
-    df = df.sample(n=5000, random_state=42).reset_index(drop=True)
+    if sample_size < len(df):
+        if fixed_sample:
+            df = df.sample(n=int(sample_size), random_state=int(sample_seed))
+        else:
+            df = df.sample(n=int(sample_size))
+
+    df = df.reset_index(drop=True)
     display_df = df.copy()
 
     X = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore").copy()
@@ -76,14 +93,13 @@ def load_and_clean_data():
     return display_df, X
 
 try:
-    display_df, processed_df = load_and_clean_data()
+    display_df, processed_df = load_and_clean_data(sample_size, fixed_sample, sample_seed)
 except Exception as e:
     st.error(f"資料前處理失敗：{e}")
     st.stop()
 
-
 # -----------------------------
-# 3. 工具函式
+# 4. 工具函式
 # -----------------------------
 def get_seq_value(row):
     for key in ["pkSeqID", "seq", "Seq", "id"]:
@@ -91,14 +107,13 @@ def get_seq_value(row):
             return row[key]
     return "N/A"
 
-
 def is_normal_label(label):
-    return str(label).strip().lower() in [str(x).strip().lower() for x in normal_labels]
-
+    text = str(label).strip().lower()
+    valid = [str(x).strip().lower() for x in normal_labels]
+    return text in valid or text in ["normal", "benign", "0"]
 
 def pick_existing_columns(df, candidates):
     return [c for c in candidates if c in df.columns]
-
 
 def safe_float(value):
     try:
@@ -106,9 +121,15 @@ def safe_float(value):
     except Exception:
         return None
 
+def get_label_series(df):
+    if "category" in df.columns:
+        return df["category"].astype(str)
+    if "attack" in df.columns:
+        return df["attack"].astype(str)
+    return None
 
 # -----------------------------
-# 4. 模擬商業產品常見流程：規則初篩
+# 5. 規則初篩
 # -----------------------------
 def rule_based_screening(orig_row):
     triggered_rules = []
@@ -137,30 +158,24 @@ def rule_based_screening(orig_row):
         triggered_rules.append("Large packet count")
         rule_score += 1
 
-    if dur is not None and bytes_ is not None:
-        if dur < 0.1 and bytes_ > 10000:
-            triggered_rules.append("Burst traffic in short duration")
-            rule_score += 2
+    if dur is not None and bytes_ is not None and dur < 0.1 and bytes_ > 10000:
+        triggered_rules.append("Burst traffic in short duration")
+        rule_score += 2
 
-    if dur is not None and pkts is not None:
-        if dur < 0.05 and pkts > 20:
-            triggered_rules.append("Short duration with many packets")
-            rule_score += 2
+    if dur is not None and pkts is not None and dur < 0.05 and pkts > 20:
+        triggered_rules.append("Short duration with many packets")
+        rule_score += 2
 
     return rule_score, triggered_rules
-
 
 def get_risk_level(rule_score, is_attack, triggered_rules):
     if is_attack and rule_score >= 2:
         return "HIGH"
     if is_attack:
         return "MEDIUM"
-    if rule_score >= 2:
-        return "LOW"
-    if len(triggered_rules) > 0:
+    if rule_score >= 2 or len(triggered_rules) > 0:
         return "LOW"
     return "NORMAL"
-
 
 def get_risk_badge(level):
     if level == "HIGH":
@@ -171,38 +186,47 @@ def get_risk_badge(level):
         return "🟡 LOW"
     return "🟢 NORMAL"
 
+# -----------------------------
+# 6. 用原始標籤建立展示池
+# -----------------------------
+@st.cache_data
+def build_display_pools(_display_df):
+    label_series = get_label_series(_display_df)
+    if label_series is None:
+        all_idx = _display_df.index.tolist()
+        return all_idx, all_idx
+
+    normal_indices = label_series[label_series.apply(is_normal_label)].index.tolist()
+    attack_indices = label_series[~label_series.apply(is_normal_label)].index.tolist()
+    return normal_indices, attack_indices
+
+try:
+    normal_pool, attack_pool = build_display_pools(display_df)
+except Exception as e:
+    st.error(f"建立樣本池失敗：{e}")
+    st.stop()
+
+if not normal_pool:
+    normal_pool = display_df.index.tolist()
+if not attack_pool:
+    attack_pool = display_df.index.tolist()
 
 # -----------------------------
-# 5. UI
+# 7. 頁面
 # -----------------------------
 st.title("物聯網惡意流量偵測系統")
 st.caption("參考市面上 IoT 安全產品流程的簡易監控模擬：規則初篩 + 模型判斷 + 風險分級")
 st.caption(f"模型：{model_name} ｜ 訓練資料：{data_path}")
 
-st.sidebar.header("控制面板")
-sim_speed = st.sidebar.slider("模擬速度（秒）", 0.1, 2.0, 0.5)
-num_samples = st.sidebar.number_input("樣本數", min_value=5, max_value=100, value=20, step=1)
-attack_ratio = st.sidebar.slider("模擬攻擊比例", min_value=0.05, max_value=0.50, value=0.15, step=0.05)
-burst_mode = st.sidebar.checkbox("啟用攻擊爆發模式", value=True)
-
 overview_col1, overview_col2 = st.columns(2)
 
 with overview_col1:
     st.subheader("資料集流量分布")
-
     fig, ax = plt.subplots()
 
-    if "category" in display_df.columns:
-        display_df["category"].astype(str).value_counts().plot.pie(
-            autopct="%1.1f%%",
-            ax=ax
-        )
-        ax.set_ylabel("")
-    elif "attack" in display_df.columns:
-        display_df["attack"].astype(str).value_counts().plot.pie(
-            autopct="%1.1f%%",
-            ax=ax
-        )
+    label_series = get_label_series(display_df)
+    if label_series is not None:
+        label_series.value_counts().plot.pie(autopct="%1.1f%%", ax=ax)
         ax.set_ylabel("")
     else:
         ax.text(0.5, 0.5, "找不到 category/attack 欄位", ha="center", va="center")
@@ -221,44 +245,7 @@ with overview_col2:
     else:
         st.info("此模型不支援特徵重要度顯示")
 
-
-# -----------------------------
-# 6. 預先建立正常 / 攻擊樣本池
-# -----------------------------
-@st.cache_data
-def build_prediction_pools(_processed_df):
-    all_pred_encoded = model.predict(_processed_df)
-
-    if label_encoder is not None:
-        all_pred_labels = label_encoder.inverse_transform(all_pred_encoded)
-    else:
-        all_pred_labels = all_pred_encoded
-
-    pred_series = pd.Series(all_pred_labels, index=_processed_df.index)
-
-    normal_indices = pred_series[pred_series.apply(is_normal_label)].index.tolist()
-    attack_indices = pred_series[~pred_series.apply(is_normal_label)].index.tolist()
-
-    return normal_indices, attack_indices
-
-try:
-    normal_pool, attack_pool = build_prediction_pools(processed_df)
-except Exception as e:
-    st.error(f"建立樣本池失敗：{e}")
-    st.stop()
-
-if not normal_pool:
-    normal_pool = processed_df.index.tolist()
-if not attack_pool:
-    attack_pool = processed_df.index.tolist()
-
-
-# -----------------------------
-# 7. 即時監控區
-# -----------------------------
 st.subheader("即時監控模擬")
-st.write("Normal pool size:", len(normal_pool))
-st.write("Attack pool size:", len(attack_pool))
 
 summary_placeholder = st.empty()
 status_placeholder = st.empty()
@@ -275,6 +262,9 @@ with right_col:
 trend_placeholder = st.empty()
 rank_placeholder = st.empty()
 
+# -----------------------------
+# 8. 模擬
+# -----------------------------
 if st.button("開始監控演示"):
     total_count = 0
     normal_count = 0
@@ -292,6 +282,14 @@ if st.button("開始監控演示"):
         ["proto", "pkts", "bytes", "dur", "rate", "srate", "drate", "state"]
     )[:5]
 
+    # 不重複抽樣：先洗牌再依序取
+    normal_queue = normal_pool.copy()
+    attack_queue = attack_pool.copy()
+    random.shuffle(normal_queue)
+    random.shuffle(attack_queue)
+    normal_ptr = 0
+    attack_ptr = 0
+
     if int(num_samples) >= 10:
         burst_start = random.randint(5, max(5, int(num_samples) - 4))
         burst_end = min(burst_start + 3, int(num_samples))
@@ -304,9 +302,19 @@ if st.button("開始監控演示"):
         else:
             use_attack = random.random() < attack_ratio
 
-        idx = random.choice(attack_pool if use_attack else normal_pool)
+        if use_attack:
+            if attack_ptr >= len(attack_queue):
+                random.shuffle(attack_queue)
+                attack_ptr = 0
+            idx = attack_queue[attack_ptr]
+            attack_ptr += 1
+        else:
+            if normal_ptr >= len(normal_queue):
+                random.shuffle(normal_queue)
+                normal_ptr = 0
+            idx = normal_queue[normal_ptr]
+            normal_ptr += 1
 
-        # 用 iloc 依位置取值，避免 KeyError
         row = processed_df.iloc[idx]
         orig_row = display_df.iloc[idx]
 
@@ -362,12 +370,13 @@ if st.button("開始監控演示"):
             })
             alert_log = alert_log[:8]
 
+        # 每一步當下風險，用於最近 5 筆趨勢
         stats_history.append({
             "step": total_count,
-            "Normal": normal_count,
-            "Low": low_count,
-            "Medium": medium_count,
-            "High": high_count
+            "Normal": 1 if risk_level == "NORMAL" else 0,
+            "Low": 1 if risk_level == "LOW" else 0,
+            "Medium": 1 if risk_level == "MEDIUM" else 0,
+            "High": 1 if risk_level == "HIGH" else 0
         })
 
         with summary_placeholder.container():
@@ -393,7 +402,7 @@ if st.button("開始監控演示"):
             st.table(pd.DataFrame(results_log))
 
         with alert_placeholder.container():
-            st.markdown("### 最近告警")
+            st.markdown("### 最近告警（僅中高風險）")
             if alert_log:
                 st.table(pd.DataFrame(alert_log))
             else:
@@ -416,9 +425,10 @@ if st.button("開始監控演示"):
             st.dataframe(pd.DataFrame([packet_info]), use_container_width=True, hide_index=True)
 
         with trend_placeholder.container():
-            st.markdown("### 風險趨勢")
+            st.markdown("### 風險趨勢（最近 5 筆）")
             chart_df = pd.DataFrame(stats_history).set_index("step")
-            st.line_chart(chart_df[["Normal", "Low", "Medium", "High"]])
+            rolling_df = chart_df[["Normal", "Low", "Medium", "High"]].rolling(window=5, min_periods=1).sum()
+            st.line_chart(rolling_df)
 
         with rank_placeholder.container():
             st.markdown("### 攻擊類型排行")
