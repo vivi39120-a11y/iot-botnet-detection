@@ -1,37 +1,63 @@
 import joblib
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import OrdinalEncoder, LabelEncoder
 
 # 1. 讀取資料
 print("正在讀取原始數據...")
-df = pd.read_csv('archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv')
+df = pd.read_csv("archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv")
 
-# --- 2. 嚴格預處理 (所有資料對齊的核心) ---
-# 定義非特徵欄位（標籤與無關資訊）
+# 2. 定義非特徵欄位
 drop_cols = ['pkSeqID', 'saddr', 'daddr', 'sport', 'dport', 'attack', 'category', 'subcategory']
 
-# 遍歷所有欄位進行文字轉數字 (Encoding)
-for col in df.columns:
-    if df[col].dtype == 'object':
-        df[col] = pd.factorize(df[col].astype(str))[0]
+# 3. 建立 X, y
+X = df.drop(columns=[c for c in drop_cols if c in df.columns]).copy()
+y = df['category'].astype(str).copy()
 
-# 確保 X 只包含特徵，y 是目標
-X = df.drop(columns=[c for c in drop_cols if c in df.columns])
-y = df['category']
+# 4. 找出類別欄位與數值欄位
+categorical_cols = X.select_dtypes(include=['object', 'string', 'category']).columns.tolist()
+numeric_cols = [c for c in X.columns if c not in categorical_cols]
 
-# 紀錄這份名單，這就是「對齊」的標準
+# 5. 類別欄位統一轉字串後做編碼
+for col in categorical_cols:
+    X[col] = X[col].astype(str)
+
+encoder = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
+if categorical_cols:
+    X[categorical_cols] = encoder.fit_transform(X[categorical_cols])
+
+# 6. 數值欄位轉成數字，不能轉的變 NaN，再補 0
+for col in numeric_cols:
+    X[col] = pd.to_numeric(X[col], errors='coerce')
+
+X = X.fillna(0).astype(float)
+
+# 7. 標籤編碼
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+
+# 8. 紀錄特徵欄位順序
 feature_list = X.columns.tolist()
 
-# 3. 訓練模型
+# 9. 訓練模型
 print(f"訓練開始，特徵數量：{len(feature_list)}")
-model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-model.fit(X, y)
+model = RandomForestClassifier(
+    n_estimators=100,
+    random_state=42,
+    n_jobs=-1
+)
+model.fit(X, y_encoded)
 
-# --- 4. 打包匯出 ---
+# 10. 打包輸出
 model_package = {
     'model': model,
-    'features': feature_list
+    'features': feature_list,
+    'categorical_cols': categorical_cols,
+    'numeric_cols': numeric_cols,
+    'encoder': encoder,
+    'label_encoder': label_encoder,
+    'drop_cols': drop_cols
 }
-joblib.dump(model_package, 'iot_model.pkl')
 
-print("✅ 本地端訓練完成！請將 iot_model.pkl 上傳至 GitHub。")
+joblib.dump(model_package, 'iot_model.pkl')
+print("✅ 本地端訓練完成！已輸出 iot_model.pkl")
