@@ -32,7 +32,7 @@ def load_display_data():
 raw_df, feature_cols = load_display_data()
 
 # --- 3. 網頁介面 ---
-st.title("🛡️ 物聯網 (IoT) 惡意流量即時偵測系統")
+st.title("物聯網 (IoT) 惡意流量即時偵測系統")
 st.markdown(f"系統狀態：**已載入預訓練模型** (基於幾百萬筆數據訓練)")
 
 # 側邊欄控制
@@ -78,9 +78,9 @@ if st.button("開始即時監控演示"):
         
         with placeholder.container():
             if pred == 1:
-                st.error(f"⚠️ 偵測到威脅！ 序列號: {int(row['seq'])}")
+                st.error(f"偵測到威脅！! 序列號: {int(row['seq'])}")
             else:
-                st.success(f"✅ 設備運行正常 序列號: {int(row['seq'])}")
+                st.success(f"設備運行正常 序列號: {int(row['seq'])}")
             st.table(pd.DataFrame(results))
             
         time.sleep(sim_speed)
