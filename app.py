@@ -60,32 +60,48 @@ with col2:
 # --- 4. 即時監控模擬 ---
 st.divider()
 if st.button("開始執行監控演示"):
-    samples = processed_df.sample(20)
+    # 1. 隨機抽樣
+    samples = processed_df.sample(num_samples)
     placeholder = st.empty()
     results_log = []
     
     for idx, row in samples.iterrows():
-        # 這裡 row 的順序已經被 reindex 保證與訓練時一模一樣
-        input_data = row.values.reshape(1, -1)
-        pred = model.predict(input_data)[0]
+        # --- 強制轉型修正 ---
+        # 將 row 轉換為數值型態，並確保丟掉任何可能殘留的文字
+        input_data = row.values.astype(float).reshape(1, -1)
         
-        # 取得原始顯示數據
+        # 2. 執行預測
+        try:
+            pred = model.predict(input_data)[0]
+        except Exception as e:
+            st.error(f"預測出錯：{e}")
+            st.stop()
+        
+        # 3. 取得原始顯示數據
         orig_row = display_df.loc[idx]
-        is_attack = (pred == 1 or str(pred).lower() == 'attack') # 容錯判斷
+        
+        # 判斷結果（支持數字或文字標籤的比較）
+        # 因為你訓練目標是 'category'，結果可能是 'DDoS', 'DoS' 等文字
+        status_text = str(pred)
+        is_attack = status_text.lower() != 'normal' # 只要不是 normal 都算攻擊
         
         res = {
             "時間": time.strftime("%H:%M:%S"),
             "序列號": int(orig_row['seq']),
             "協定": orig_row['proto'],
-            "判別結果": "🔴 ATTACK" if is_attack else "🟢 NORMAL"
+            "偵測類別": status_text, # 顯示具體的攻擊種類
+            "狀態": "🔴 ATTACK" if is_attack else "🟢 NORMAL"
         }
         results_log.insert(0, res)
         
+        # 4. 更新 UI
         with placeholder.container():
             if is_attack:
-                st.error(f"偵測到入侵行為！ 序列號: {res['序列號']}")
+                st.error(f"警報：偵測到 {status_text} 行為！ (序列號: {res['序列號']})")
             else:
-                st.success(f"流量正常 序列號: {res['序列號']}")
+                st.success(f"監測中：設備運行正常。 (序列號: {res['序列號']})")
+            
+            # 顯示結果表格
             st.table(pd.DataFrame(results_log))
         
-        time.sleep(0.5)
+        time.sleep(sim_speed)
