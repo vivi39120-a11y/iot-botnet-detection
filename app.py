@@ -23,9 +23,10 @@ def load_trained_assets():
         package["encoder"],
         package["label_encoder"],
         package["drop_cols"],
-        package.get("normal_labels", ["normal", "benign"]),
+        package.get("normal_labels", ["Normal"]),
         package.get("model_name", "RandomForestClassifier"),
-        package.get("data_path", "Unknown")
+        package.get("data_path", "Unknown"),
+        package.get("metrics", {})
     )
 
 try:
@@ -39,7 +40,8 @@ try:
         drop_cols,
         normal_labels,
         model_name,
-        data_path
+        data_path,
+        metrics
     ) = load_trained_assets()
 except Exception as e:
     st.error(f"讀取模型失敗：{e}")
@@ -63,7 +65,7 @@ sample_seed = st.sidebar.number_input("固定抽樣種子", min_value=0, max_val
 # -----------------------------
 @st.cache_data
 def load_and_clean_data(sample_size, fixed_sample, sample_seed):
-    df = pd.read_csv("archive/UNSW_2018_IoT_Botnet_Final_10_best_Testing.csv")
+    df = pd.read_csv("archive/UNSW_NB15_testing-set.csv")
 
     if sample_size < len(df):
         if fixed_sample:
@@ -102,7 +104,7 @@ except Exception as e:
 # 4. 工具函式
 # -----------------------------
 def get_seq_value(row):
-    for key in ["pkSeqID", "seq", "Seq", "id"]:
+    for key in ["id", "pkSeqID", "seq", "Seq"]:
         if key in row.index:
             return row[key]
     return "N/A"
@@ -122,14 +124,14 @@ def safe_float(value):
         return None
 
 def get_label_series(df):
-    if "category" in df.columns:
-        return df["category"].astype(str)
-    if "attack" in df.columns:
-        return df["attack"].astype(str)
+    if "attack_cat" in df.columns:
+        return df["attack_cat"].astype(str)
+    if "label" in df.columns:
+        return df["label"].astype(str)
     return None
 
 # -----------------------------
-# 5. 規則初篩
+# 5. 規則初篩（UNSW-NB15 版）
 # -----------------------------
 def rule_based_screening(orig_row):
     triggered_rules = []
@@ -137,34 +139,52 @@ def rule_based_screening(orig_row):
 
     dur = safe_float(orig_row["dur"]) if "dur" in orig_row.index else None
     rate = safe_float(orig_row["rate"]) if "rate" in orig_row.index else None
-    srate = safe_float(orig_row["srate"]) if "srate" in orig_row.index else None
-    drate = safe_float(orig_row["drate"]) if "drate" in orig_row.index else None
-    pkts = safe_float(orig_row["pkts"]) if "pkts" in orig_row.index else None
-    bytes_ = safe_float(orig_row["bytes"]) if "bytes" in orig_row.index else None
+    spkts = safe_float(orig_row["spkts"]) if "spkts" in orig_row.index else None
+    dpkts = safe_float(orig_row["dpkts"]) if "dpkts" in orig_row.index else None
+    sbytes = safe_float(orig_row["sbytes"]) if "sbytes" in orig_row.index else None
+    dbytes = safe_float(orig_row["dbytes"]) if "dbytes" in orig_row.index else None
+    sload = safe_float(orig_row["sload"]) if "sload" in orig_row.index else None
+    dload = safe_float(orig_row["dload"]) if "dload" in orig_row.index else None
+    ct_srv_src = safe_float(orig_row["ct_srv_src"]) if "ct_srv_src" in orig_row.index else None
+    ct_dst_src_ltm = safe_float(orig_row["ct_dst_src_ltm"]) if "ct_dst_src_ltm" in orig_row.index else None
 
     if rate is not None and rate > 1000:
-        triggered_rules.append("High packet rate")
+        triggered_rules.append("High flow rate")
         rule_score += 2
 
-    if srate is not None and srate > 1000:
-        triggered_rules.append("High source rate")
+    if sload is not None and sload > 1000000:
+        triggered_rules.append("High source load")
         rule_score += 2
 
-    if drate is not None and drate > 1000:
-        triggered_rules.append("High destination rate")
+    if dload is not None and dload > 1000000:
+        triggered_rules.append("High destination load")
         rule_score += 2
 
-    if pkts is not None and pkts > 50:
-        triggered_rules.append("Large packet count")
+    if spkts is not None and spkts > 50:
+        triggered_rules.append("Large source packet count")
         rule_score += 1
 
-    if dur is not None and bytes_ is not None and dur < 0.1 and bytes_ > 10000:
-        triggered_rules.append("Burst traffic in short duration")
-        rule_score += 2
+    if dpkts is not None and dpkts > 50:
+        triggered_rules.append("Large destination packet count")
+        rule_score += 1
 
-    if dur is not None and pkts is not None and dur < 0.05 and pkts > 20:
-        triggered_rules.append("Short duration with many packets")
-        rule_score += 2
+    if dur is not None and sbytes is not None:
+        if dur < 0.1 and sbytes > 10000:
+            triggered_rules.append("Burst source traffic")
+            rule_score += 2
+
+    if dur is not None and dbytes is not None:
+        if dur < 0.1 and dbytes > 10000:
+            triggered_rules.append("Burst destination traffic")
+            rule_score += 2
+
+    if ct_srv_src is not None and ct_srv_src > 20:
+        triggered_rules.append("High repeated service access")
+        rule_score += 1
+
+    if ct_dst_src_ltm is not None and ct_dst_src_ltm > 20:
+        triggered_rules.append("High repeated src-dst activity")
+        rule_score += 1
 
     return rule_score, triggered_rules
 
@@ -218,6 +238,13 @@ st.title("物聯網惡意流量偵測系統")
 st.caption("參考市面上 IoT 安全產品流程的簡易監控模擬：規則初篩 + 模型判斷 + 風險分級")
 st.caption(f"模型：{model_name} ｜ 訓練資料：{data_path}")
 
+if metrics:
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Accuracy", f'{metrics.get("accuracy", 0):.4f}')
+    m2.metric("Precision", f'{metrics.get("precision_weighted", 0):.4f}')
+    m3.metric("Recall", f'{metrics.get("recall_weighted", 0):.4f}')
+    m4.metric("F1-score", f'{metrics.get("f1_weighted", 0):.4f}')
+
 overview_col1, overview_col2 = st.columns(2)
 
 with overview_col1:
@@ -229,7 +256,7 @@ with overview_col1:
         label_series.value_counts().plot.pie(autopct="%1.1f%%", ax=ax)
         ax.set_ylabel("")
     else:
-        ax.text(0.5, 0.5, "找不到 category/attack 欄位", ha="center", va="center")
+        ax.text(0.5, 0.5, "找不到 attack_cat / label 欄位", ha="center", va="center")
         ax.axis("off")
 
     st.pyplot(fig)
@@ -279,10 +306,9 @@ if st.button("開始監控演示"):
 
     show_cols = pick_existing_columns(
         display_df,
-        ["proto", "pkts", "bytes", "dur", "rate", "srate", "drate", "state"]
-    )[:5]
+        ["proto", "service", "state", "spkts", "dpkts", "sbytes", "dbytes", "rate"]
+    )[:6]
 
-    # 不重複抽樣：先洗牌再依序取
     normal_queue = normal_pool.copy()
     attack_queue = attack_pool.copy()
     random.shuffle(normal_queue)
@@ -370,7 +396,6 @@ if st.button("開始監控演示"):
             })
             alert_log = alert_log[:8]
 
-        # 每一步當下風險，用於最近 5 筆趨勢
         stats_history.append({
             "step": total_count,
             "Normal": 1 if risk_level == "NORMAL" else 0,
