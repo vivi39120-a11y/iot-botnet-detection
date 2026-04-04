@@ -389,7 +389,6 @@ if st.button("開始監控演示"):
                 "告警類型": alert_type,
                 "命中規則": rule_text
             })
-            alert_log = alert_log[:8]
 
         # 改成全部測試過程的累積結果
         stats_history.append({
@@ -428,7 +427,7 @@ if st.button("開始監控演示"):
             )
 
         with alert_placeholder.container():
-            st.markdown("### 告警（僅中高風險）")
+            st.markdown("### 中高風險警示（共 {len(alert_log)} 筆）")
 
             if alert_log:
                 alert_df = pd.DataFrame(alert_log)
