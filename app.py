@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import matplotlib
+matplotlib.rcParams["font.sans-serif"] = ["Microsoft JhengHei"]
+matplotlib.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="IoT 安全專案", layout="wide")
 
