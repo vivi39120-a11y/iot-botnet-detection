@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import plotly.express as px
 import matplotlib
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft JhengHei"]
 matplotlib.rcParams["axes.unicode_minus"] = False
@@ -234,11 +235,9 @@ if not normal_pool:
 if not attack_pool:
     attack_pool = display_df.index.tolist()
 
+
 # -----------------------------
-# 7. 頁面
-# -----------------------------
-# -----------------------------
-# 7. 頁面佈局與資料視覺化 (更新版)
+# 7. 頁面佈局與資料視覺化
 # -----------------------------
 st.title("物聯網惡意流量偵測系統")
 st.caption("參考市面上 IoT 安全產品流程的簡易監控模擬：規則初篩 + 模型判斷 + 風險分級")
@@ -293,18 +292,13 @@ with dist_col2:
 st.divider() # 畫一條橫向分隔線
 
 # --- 第二層：模型分析 (全寬度展示) ---
-st.header("2. 模型關鍵特徵分析 (Feature Importance)")
+st.header("2. 模型關鍵特徵 (Feature Importance)")
 
 if hasattr(model, "feature_importances_"):
-    # 1. 取得原始特徵重要度
-    importances = pd.Series(model.feature_importances_, index=trained_features)
-    
-    # 2. 空間變大，增加展示數量到 12 個
-    top_n = 12
-    top_importances = importances.nlargest(top_n)
-
-    # 3. 建立對應中文名稱的 DataFrame (沿用你定義的 feature_name_map)
+    # 1. 先定義對照表 (放在最前面確保後面抓得到)
     feature_name_map = {
+        "dttl": "目的TTL",
+        "service": "服務類型",
         "ct_dst_sport_ltm": "目的埠長期連線次數",
         "sbytes": "來源位元組數",
         "sttl": "來源TTL",
@@ -329,34 +323,49 @@ if hasattr(model, "feature_importances_"):
         "ct_src_ltm": "同一來源地址長期連線次數",
         "ct_dst_ltm": "同一目的地址長期連線次數",
         "ct_src_dport_ltm": "來源與目的埠長期連線次數",
-        "ct_srv_src": "服務對應來源次數",
         "is_sm_ips_ports": "源與目的IP/埠是否相同",
         "swin": "來源TCP窗口大小",
         "dwin": "目的TCP窗口大小",
         "stcpb": "來源TCP序列號",
         "dtcpb": "目的TCP序列號",
         "trans_depth": "HTTP請求/響應深度"
-        
     }
 
+    # 2. 取得重要度數據
+    importances = pd.Series(model.feature_importances_, index=trained_features)
+    top_n = 12
+    top_importances = importances.nlargest(top_n)
+
+    # 3. 建立 DataFrame，同時轉換中文
     chart_data = pd.DataFrame({
         "特徵名稱": [feature_name_map.get(col, col) for col in top_importances.index],
         "重要度分數": top_importances.values
-    }).sort_values("重要度分數", ascending=True) # 排序讓長條圖由長到短排列
+    }).sort_values("重要度分數", ascending=True)
 
-    # 4. 使用全寬度顯示，徹底解決標籤被切掉與方塊問題
-    st.bar_chart(
-        data=chart_data, 
-        x="特徵名稱", 
-        y="重要度分數", 
-        horizontal=True,
-        use_container_width=True
+    # 4. 使用 Plotly 繪圖
+    fig_bar = px.bar(
+        chart_data, 
+        x="重要度分數", 
+        y="特徵名稱", 
+        orientation='h',
+        text_auto='.3f',
+        color="重要度分數",           # 增加顏色深淺變化，看起來更專業
+        color_continuous_scale="Blues"
     )
+    
+    # 5. 關鍵設定：調整左邊距 (margin-l)，確保長文字不被切掉
+    fig_bar.update_layout(
+        margin=dict(l=200, r=20, t=20, b=20), # 如果字還是被切，就把 180 再調大
+        yaxis={'title': ''},
+        xaxis={'title': '重要度影響力'},
+        showlegend=False,
+        coloraxis_showscale=False # 隱藏右邊的顏色條，保持畫面簡潔
+    )
+    
+    st.plotly_chart(fig_bar, use_container_width=True)
     st.caption("※ 數值越高代表該特徵對 AI 判斷「攻擊/正常」的影響力越大。")
 else:
     st.info("目前的模型不支援顯示特徵重要度。")
-
-st.divider()
 
 summary_placeholder = st.empty()
 status_placeholder = st.empty()
