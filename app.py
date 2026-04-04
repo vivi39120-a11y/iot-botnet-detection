@@ -386,13 +386,14 @@ if st.button("開始監控演示"):
         results_log.insert(0, event_item)
 
         if risk_level in ["HIGH", "MEDIUM"]:
-            alert_text = f"{risk_level} alert - {status}"
-            if triggered_rules:
-                alert_text += f" | Rules: {', '.join(triggered_rules[:2])}"
+            alert_type = f"{risk_level} alert - {status}"
+            rule_text = ", ".join(triggered_rules[:2]) if triggered_rules else "None"
+
             alert_log.insert(0, {
                 "時間": current_time,
                 "序列號": seq_value,
-                "告警內容": alert_text
+                "告警類型": alert_type,
+                "命中規則": rule_text
             })
             alert_log = alert_log[:8]
 
@@ -424,7 +425,7 @@ if st.button("開始監控演示"):
                 st.success("目前流量正常")
 
         with event_placeholder.container():
-            st.markdown(f"### 最近事件（共 {len(results_log)} 筆）")
+            st.markdown(f"### 事件（共 {len(results_log)} 筆）")
             st.dataframe(
                 pd.DataFrame(results_log),
                 use_container_width=True,
@@ -434,28 +435,28 @@ if st.button("開始監控演示"):
 
         with alert_placeholder.container():
             st.markdown("### 最近告警（僅中高風險）")
+
             if alert_log:
-                st.dataframe(
-                    pd.DataFrame(alert_log),
-                    use_container_width=True,
-                    hide_index=True,
-                    height=420
-                )
+                alert_df = pd.DataFrame(alert_log)
             else:
-                empty_alert_df = pd.DataFrame([{"時間": "", "序列號": "", "告警內容": "目前尚未出現中高風險告警"}])
-                st.dataframe(
-                    empty_alert_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    height=420
-                )
+                alert_df = pd.DataFrame([
+                    {"時間": "", "序列號": "", "告警類型": "目前尚未出現中高風險告警", "命中規則": ""}
+                ])
 
-
+            st.markdown(
+                """
+                <div style="height:420px; overflow-y:auto; overflow-x:hidden; border:1px solid #e6e6e6; border-radius:10px; padding:6px;">
+                """,
+                unsafe_allow_html=True
+            )
+            st.table(alert_df)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
         with trend_placeholder.container():
             st.markdown("### 風險趨勢（全部測試結果）")
             chart_df = pd.DataFrame(stats_history).set_index("step")
             st.line_chart(chart_df[["Normal", "Low", "Medium", "High"]])
-            st.caption("橫軸：測試步數（step）｜ 縱軸：累積事件數量")
+            st.caption("橫軸：測試筆數｜ 縱軸：累積事件數量")
 
         with rank_placeholder.container():
             st.markdown("### 攻擊類型排行")
