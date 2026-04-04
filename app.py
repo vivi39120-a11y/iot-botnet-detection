@@ -285,7 +285,6 @@ with left_col:
 
 with right_col:
     alert_placeholder = st.empty()
-    packet_placeholder = st.empty()
 
 trend_placeholder = st.empty()
 rank_placeholder = st.empty()
@@ -426,30 +425,31 @@ if st.button("開始監控演示"):
 
         with event_placeholder.container():
             st.markdown(f"### 最近事件（共 {len(results_log)} 筆）")
-            st.dataframe(pd.DataFrame(results_log), use_container_width=True, hide_index=True)
+            st.dataframe(
+                pd.DataFrame(results_log),
+                use_container_width=True,
+                hide_index=True,
+                height=420
+            )
 
         with alert_placeholder.container():
             st.markdown("### 最近告警（僅中高風險）")
             if alert_log:
-                st.table(pd.DataFrame(alert_log))
+                st.dataframe(
+                    pd.DataFrame(alert_log),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=420
+                )
             else:
-                st.info("目前尚未出現中高風險告警")
+                empty_alert_df = pd.DataFrame([{"時間": "", "序列號": "", "告警內容": "目前尚未出現中高風險告警"}])
+                st.dataframe(
+                    empty_alert_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=420
+                )
 
-        with packet_placeholder.container():
-            st.markdown("### 最新流量摘要")
-            packet_info = {
-                "時間": current_time,
-                "序列號": seq_value,
-                "模型判斷": status,
-                "規則分數": rule_score,
-                "風險等級": risk_level,
-                "命中規則": ", ".join(triggered_rules) if triggered_rules else "None"
-            }
-
-            for col in show_cols:
-                packet_info[col] = orig_row[col]
-
-            st.dataframe(pd.DataFrame([packet_info]), use_container_width=True, hide_index=True)
 
         with trend_placeholder.container():
             st.markdown("### 風險趨勢（全部測試結果）")
