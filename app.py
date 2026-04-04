@@ -238,12 +238,6 @@ st.title("物聯網惡意流量偵測系統")
 st.caption("參考市面上 IoT 安全產品流程的簡易監控模擬：規則初篩 + 模型判斷 + 風險分級")
 st.caption(f"模型：{model_name} ｜ 訓練資料：{data_path}")
 
-if metrics:
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Accuracy", f'{metrics.get("accuracy", 0):.4f}')
-    m2.metric("Precision", f'{metrics.get("precision_weighted", 0):.4f}')
-    m3.metric("Recall", f'{metrics.get("recall_weighted", 0):.4f}')
-    m4.metric("F1-score", f'{metrics.get("f1_weighted", 0):.4f}')
 
 overview_col1, overview_col2 = st.columns(2)
 
@@ -434,7 +428,7 @@ if st.button("開始監控演示"):
             )
 
         with alert_placeholder.container():
-            st.markdown("### 最近告警（僅中高風險）")
+            st.markdown("### 告警（僅中高風險）")
 
             if alert_log:
                 alert_df = pd.DataFrame(alert_log)
@@ -443,15 +437,19 @@ if st.button("開始監控演示"):
                     {"時間": "", "序列號": "", "告警類型": "目前尚未出現中高風險告警", "命中規則": ""}
                 ])
 
-            st.markdown(
-                """
-                <div style="height:420px; overflow-y:auto; overflow-x:hidden; border:1px solid #e6e6e6; border-radius:10px; padding:6px;">
-                """,
-                unsafe_allow_html=True
+            st.dataframe(
+                alert_df,
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+                column_config={
+                    "時間": st.column_config.TextColumn("時間", width="small"),
+                    "序列號": st.column_config.TextColumn("序列號", width="small"),
+                    "告警類型": st.column_config.TextColumn("告警類型", width="medium"),
+                    "命中規則": st.column_config.TextColumn("命中規則", width="large"),
+                }
             )
-            st.table(alert_df)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
+
         with trend_placeholder.container():
             st.markdown("### 風險趨勢（全部測試結果）")
             chart_df = pd.DataFrame(stats_history).set_index("step")
