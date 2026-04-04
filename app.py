@@ -260,7 +260,53 @@ with overview_col2:
     if hasattr(model, "feature_importances_"):
         importances = pd.Series(model.feature_importances_, index=trained_features)
         fig_bar, ax_bar = plt.subplots()
-        importances.nlargest(8).sort_values().plot(kind="barh", ax=ax_bar)
+        feature_name_map = {
+            "ct_dst_sport_ltm": "目的埠長期連線次數",
+            "sbytes": "來源位元組數",
+            "sttl": "來源TTL",
+            "ct_srv_dst": "服務對應目的地次數",
+            "smean": "來源封包平均大小",
+            "ct_srv_src": "服務對應來源次數",
+            "ct_state_ttl": "狀態與TTL組合次數",
+            "ct_dst_src_ltm": "目的地與來源長期連線次數",
+            "dur": "連線持續時間",
+            "proto": "通訊協定",
+            "service": "服務類型",
+            "state": "連線狀態",
+            "spkts": "來源封包數",
+            "dpkts": "目的封包數",
+            "dbytes": "目的位元組數",
+            "rate": "流量速率",
+            "sload": "來源負載",
+            "dload": "目的負載",
+            "sinpkt": "來源封包間隔",
+            "dinpkt": "目的封包間隔",
+            "sjit": "來源波動",
+            "djit": "目的波動",
+            "tcprtt": "TCP往返時間",
+            "synack": "SYN-ACK時間",
+            "ackdat": "ACK資料時間",
+            "dmean": "目的封包平均大小",
+            "trans_depth": "HTTP交易深度",
+            "response_body_len": "回應內容長度",
+            "ct_src_ltm": "來源長期連線次數",
+            "ct_dst_ltm": "目的地長期連線次數",
+            "ct_src_dport_ltm": "來源對目的埠長期次數",
+            "is_ftp_login": "是否FTP登入",
+            "ct_ftp_cmd": "FTP命令次數",
+            "ct_flw_http_mthd": "HTTP方法流量次數",
+            "is_sm_ips_ports": "來源目的IP埠是否相同"
+        }
+
+        importances = pd.Series(model.feature_importances_, index=trained_features)
+        top_importances = importances.nlargest(8).sort_values()
+
+        top_importances.index = [
+            feature_name_map.get(col, col) for col in top_importances.index
+        ]
+
+        fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
+        top_importances.plot(kind="barh", ax=ax_bar)
         ax_bar.set_xlabel("特徵重要度")
         ax_bar.set_ylabel("特徵名稱")
         st.pyplot(fig_bar)
