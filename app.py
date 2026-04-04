@@ -267,7 +267,8 @@ with overview_col2:
         importances = pd.Series(model.feature_importances_, index=trained_features)
         fig_bar, ax_bar = plt.subplots()
         importances.nlargest(8).sort_values().plot(kind="barh", ax=ax_bar)
-        ax_bar.set_xlabel("Importance")
+        ax_bar.set_xlabel("特徵重要度")
+        ax_bar.set_ylabel("特徵名稱")
         st.pyplot(fig_bar)
     else:
         st.info("此模型不支援特徵重要度顯示")
@@ -382,8 +383,8 @@ if st.button("開始監控演示"):
             "風險等級": get_risk_badge(risk_level),
             "最終判定": "ATTACK" if is_attack else "NORMAL"
         }
+        # 改成保留全部模擬結果
         results_log.insert(0, event_item)
-        results_log = results_log[:15]
 
         if risk_level in ["HIGH", "MEDIUM"]:
             alert_text = f"{risk_level} alert - {status}"
@@ -396,12 +397,13 @@ if st.button("開始監控演示"):
             })
             alert_log = alert_log[:8]
 
+        # 改成全部測試過程的累積結果
         stats_history.append({
             "step": total_count,
-            "Normal": 1 if risk_level == "NORMAL" else 0,
-            "Low": 1 if risk_level == "LOW" else 0,
-            "Medium": 1 if risk_level == "MEDIUM" else 0,
-            "High": 1 if risk_level == "HIGH" else 0
+            "Normal": normal_count,
+            "Low": low_count,
+            "Medium": medium_count,
+            "High": high_count
         })
 
         with summary_placeholder.container():
@@ -423,8 +425,8 @@ if st.button("開始監控演示"):
                 st.success("目前流量正常")
 
         with event_placeholder.container():
-            st.markdown("### 最近事件")
-            st.table(pd.DataFrame(results_log))
+            st.markdown(f"### 最近事件（共 {len(results_log)} 筆）")
+            st.dataframe(pd.DataFrame(results_log), use_container_width=True, hide_index=True)
 
         with alert_placeholder.container():
             st.markdown("### 最近告警（僅中高風險）")
@@ -450,10 +452,10 @@ if st.button("開始監控演示"):
             st.dataframe(pd.DataFrame([packet_info]), use_container_width=True, hide_index=True)
 
         with trend_placeholder.container():
-            st.markdown("### 風險趨勢（最近 5 筆）")
+            st.markdown("### 風險趨勢（全部測試結果）")
             chart_df = pd.DataFrame(stats_history).set_index("step")
-            rolling_df = chart_df[["Normal", "Low", "Medium", "High"]].rolling(window=5, min_periods=1).sum()
-            st.line_chart(rolling_df)
+            st.line_chart(chart_df[["Normal", "Low", "Medium", "High"]])
+            st.caption("橫軸：測試步數（step）｜ 縱軸：累積事件數量")
 
         with rank_placeholder.container():
             st.markdown("### 攻擊類型排行")
