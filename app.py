@@ -249,23 +249,29 @@ st.header("1. 資料集流量分布 (Dataset Overview)")
 dist_col1, dist_col2 = st.columns([1.2, 1])
 
 with dist_col1:
-    fig, ax = plt.subplots(figsize=(6, 4))
+    # 稍微調整畫布大小
+    fig, ax = plt.subplots(figsize=(7, 5)) 
     label_series = get_label_series(display_df)
     
     if label_series is not None:
         counts = label_series.value_counts()
-        # 畫圓餅圖
+        # 繪製經典圓餅圖
         counts.plot.pie(
             autopct="%1.1f%%", 
             ax=ax, 
             startangle=140, 
-            pctdistance=0.85, 
+            pctdistance=0.75,    # 百分比數字的位置 (0-1 之間)
+            labeldistance=1.1,   # 類別文字標籤的位置 (大於 1 會往圓外移)
             textprops={'fontsize': 10}
         )
         ax.set_ylabel("")
-        # 製作甜甜圈圖效果，讓中間留白，文字更清晰
-        centre_circle = plt.Circle((0,0), 0.70, fc='white')
-        fig.gca().add_artist(centre_circle)
+        
+        # --- 關鍵修改：刪除以下這兩行，圓餅圖就不會變甜甜圈 ---
+        # centre_circle = plt.Circle((0,0), 0.70, fc='white')
+        # fig.gca().add_artist(centre_circle)
+        
+        # 強制緊湊佈局，防止標籤文字超出圖片邊界
+        plt.tight_layout()
     else:
         ax.text(0.5, 0.5, "找不到標籤欄位", ha="center")
     
@@ -313,8 +319,24 @@ if hasattr(model, "feature_importances_"):
         "dbytes": "目的位元組數",
         "rate": "流量速率",
         "sload": "來源負載",
-        "dload": "目的負載"
-        # ...其餘對應保持不變
+        "dload": "目的負載",
+        "sinpkt": "來源封包到達間隔時間",
+        "dinpkt": "目的封包到達間隔時間",
+        "tcprtt": "TCP連線往返時間",
+        "synack": "TCP建立連線時間 (SYN-ACK)",
+        "ackdat": "TCP資料傳輸延遲 (ACK-DAT)",
+        "dmean": "目的封包平均大小",
+        "ct_src_ltm": "同一來源地址長期連線次數",
+        "ct_dst_ltm": "同一目的地址長期連線次數",
+        "ct_src_dport_ltm": "來源與目的埠長期連線次數",
+        "ct_srv_src": "服務對應來源次數",
+        "is_sm_ips_ports": "源與目的IP/埠是否相同",
+        "swin": "來源TCP窗口大小",
+        "dwin": "目的TCP窗口大小",
+        "stcpb": "來源TCP序列號",
+        "dtcpb": "目的TCP序列號",
+        "trans_depth": "HTTP請求/響應深度"
+        
     }
 
     chart_data = pd.DataFrame({
