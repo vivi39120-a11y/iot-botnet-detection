@@ -1,5 +1,14 @@
+# 基礎網頁框架
 streamlit
+
+# 數據處理與分析
 pandas
+numpy
+
+# 機器學習模型執行
 scikit-learn
+joblib
+
+# 數據視覺化 (雖然你改用 st.bar_chart，但部分匯入仍需要這些庫)
 matplotlib
 seaborn

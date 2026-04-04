@@ -257,12 +257,17 @@ with overview_col1:
         ax.axis("off")
 
     st.pyplot(fig)
-
 with overview_col2:
-    st.subheader("模型關鍵特徵")
+    st.subheader("模型關鍵特徵 (Feature Importance)")
     if hasattr(model, "feature_importances_"):
+        # 1. 取得原始特徵重要度
         importances = pd.Series(model.feature_importances_, index=trained_features)
-        fig_bar, ax_bar = plt.subplots()
+        
+        # 2. 取得前 10 名（或是你想要的數量）
+        top_n = 10
+        top_importances = importances.nlargest(top_n)
+
+        # 3. 建立對應中文名稱的 DataFrame
         feature_name_map = {
             "ct_dst_sport_ltm": "目的埠長期連線次數",
             "sbytes": "來源位元組數",
@@ -300,21 +305,24 @@ with overview_col2:
             "ct_flw_http_mthd": "HTTP方法流量次數",
             "is_sm_ips_ports": "來源目的IP埠是否相同"
         }
+        # 這裡會自動處理你的 feature_name_map，找不到的就顯示原名
+        chart_data = pd.DataFrame({
+            "特徵名稱": [feature_name_map.get(col, col) for col in top_importances.index],
+            "重要度分數": top_importances.values
+        })
 
-        importances = pd.Series(model.feature_importances_, index=trained_features)
-        top_importances = importances.nlargest(8).sort_values()
-
-        top_importances.index = [
-            feature_name_map.get(col, col) for col in top_importances.index
-        ]
-
-        fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
-        top_importances.plot(kind="barh", ax=ax_bar)
-        ax_bar.set_xlabel("特徵重要度")
-        ax_bar.set_ylabel("特徵名稱")
-        st.pyplot(fig_bar)
+        # 4. 使用 Streamlit 原生圖表 (完全解決中文字體方塊問題)
+        st.bar_chart(
+            data=chart_data, 
+            x="特徵名稱", 
+            y="重要度分數", 
+            horizontal=True,  # 橫向長條圖，字比較不會擠在一起
+            use_container_width=True
+        )
+        
+        st.caption("※ 數值越高代表該特徵對 AI 判斷「攻擊/正常」的影響力越大。")
     else:
-        st.info("此模型不支援特徵重要度顯示")
+        st.info("目前的模型不支援顯示特徵重要度。")
 
 st.subheader("即時監控模擬")
 
