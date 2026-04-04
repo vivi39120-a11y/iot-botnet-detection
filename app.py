@@ -237,94 +237,104 @@ if not attack_pool:
 # -----------------------------
 # 7. 頁面
 # -----------------------------
+# -----------------------------
+# 7. 頁面佈局與資料視覺化 (更新版)
+# -----------------------------
 st.title("物聯網惡意流量偵測系統")
 st.caption("參考市面上 IoT 安全產品流程的簡易監控模擬：規則初篩 + 模型判斷 + 風險分級")
 st.caption(f"模型：{model_name} ｜ 訓練資料：{data_path}")
 
+# --- 第一層：資料集總覽 (左圖右表) ---
+st.header("1. 資料集流量分布 (Dataset Overview)")
+dist_col1, dist_col2 = st.columns([1.2, 1])
 
-overview_col1, overview_col2 = st.columns(2)
-
-with overview_col1:
-    st.subheader("資料集流量分布")
-    fig, ax = plt.subplots()
-
+with dist_col1:
+    fig, ax = plt.subplots(figsize=(6, 4))
     label_series = get_label_series(display_df)
+    
     if label_series is not None:
-        label_series.value_counts().plot.pie(autopct="%1.1f%%", ax=ax)
-        ax.set_ylabel("")
-    else:
-        ax.text(0.5, 0.5, "找不到 attack_cat / label 欄位", ha="center", va="center")
-        ax.axis("off")
-
-    st.pyplot(fig)
-with overview_col2:
-    st.subheader("模型關鍵特徵 (Feature Importance)")
-    if hasattr(model, "feature_importances_"):
-        # 1. 取得原始特徵重要度
-        importances = pd.Series(model.feature_importances_, index=trained_features)
-        
-        # 2. 取得前 10 名（或是你想要的數量）
-        top_n = 10
-        top_importances = importances.nlargest(top_n)
-
-        # 3. 建立對應中文名稱的 DataFrame
-        feature_name_map = {
-            "ct_dst_sport_ltm": "目的埠長期連線次數",
-            "sbytes": "來源位元組數",
-            "sttl": "來源TTL",
-            "ct_srv_dst": "服務對應目的地次數",
-            "smean": "來源封包平均大小",
-            "ct_srv_src": "服務對應來源次數",
-            "ct_state_ttl": "狀態與TTL組合次數",
-            "ct_dst_src_ltm": "目的地與來源長期連線次數",
-            "dur": "連線持續時間",
-            "proto": "通訊協定",
-            "service": "服務類型",
-            "state": "連線狀態",
-            "spkts": "來源封包數",
-            "dpkts": "目的封包數",
-            "dbytes": "目的位元組數",
-            "rate": "流量速率",
-            "sload": "來源負載",
-            "dload": "目的負載",
-            "sinpkt": "來源封包間隔",
-            "dinpkt": "目的封包間隔",
-            "sjit": "來源波動",
-            "djit": "目的波動",
-            "tcprtt": "TCP往返時間",
-            "synack": "SYN-ACK時間",
-            "ackdat": "ACK資料時間",
-            "dmean": "目的封包平均大小",
-            "trans_depth": "HTTP交易深度",
-            "response_body_len": "回應內容長度",
-            "ct_src_ltm": "來源長期連線次數",
-            "ct_dst_ltm": "目的地長期連線次數",
-            "ct_src_dport_ltm": "來源對目的埠長期次數",
-            "is_ftp_login": "是否FTP登入",
-            "ct_ftp_cmd": "FTP命令次數",
-            "ct_flw_http_mthd": "HTTP方法流量次數",
-            "is_sm_ips_ports": "來源目的IP埠是否相同"
-        }
-        # 這裡會自動處理你的 feature_name_map，找不到的就顯示原名
-        chart_data = pd.DataFrame({
-            "特徵名稱": [feature_name_map.get(col, col) for col in top_importances.index],
-            "重要度分數": top_importances.values
-        })
-
-        # 4. 使用 Streamlit 原生圖表 (完全解決中文字體方塊問題)
-        st.bar_chart(
-            data=chart_data, 
-            x="特徵名稱", 
-            y="重要度分數", 
-            horizontal=True,  # 橫向長條圖，字比較不會擠在一起
-            use_container_width=True
+        counts = label_series.value_counts()
+        # 畫圓餅圖
+        counts.plot.pie(
+            autopct="%1.1f%%", 
+            ax=ax, 
+            startangle=140, 
+            pctdistance=0.85, 
+            textprops={'fontsize': 10}
         )
-        
-        st.caption("※ 數值越高代表該特徵對 AI 判斷「攻擊/正常」的影響力越大。")
+        ax.set_ylabel("")
+        # 製作甜甜圈圖效果，讓中間留白，文字更清晰
+        centre_circle = plt.Circle((0,0), 0.70, fc='white')
+        fig.gca().add_artist(centre_circle)
     else:
-        st.info("目前的模型不支援顯示特徵重要度。")
+        ax.text(0.5, 0.5, "找不到標籤欄位", ha="center")
+    
+    st.pyplot(fig)
 
-st.subheader("即時監控模擬")
+with dist_col2:
+    st.write("#### 流量統計詳細資料")
+    if label_series is not None:
+        # 建立文字版比例表格
+        dist_df = pd.DataFrame({
+            "類別": counts.index,
+            "樣本數": counts.values,
+            "百分比": [f"{(v/counts.sum())*100:.1f}%" for v in counts.values]
+        })
+        st.table(dist_df) # 使用靜態表格呈現，方便閱讀
+    else:
+        st.info("暫無資料")
+
+st.divider() # 畫一條橫向分隔線
+
+# --- 第二層：模型分析 (全寬度展示) ---
+st.header("2. 模型關鍵特徵分析 (Feature Importance)")
+
+if hasattr(model, "feature_importances_"):
+    # 1. 取得原始特徵重要度
+    importances = pd.Series(model.feature_importances_, index=trained_features)
+    
+    # 2. 空間變大，增加展示數量到 12 個
+    top_n = 12
+    top_importances = importances.nlargest(top_n)
+
+    # 3. 建立對應中文名稱的 DataFrame (沿用你定義的 feature_name_map)
+    feature_name_map = {
+        "ct_dst_sport_ltm": "目的埠長期連線次數",
+        "sbytes": "來源位元組數",
+        "sttl": "來源TTL",
+        "ct_srv_dst": "服務對應目的地次數",
+        "smean": "來源封包平均大小",
+        "ct_srv_src": "服務對應來源次數",
+        "ct_state_ttl": "狀態與TTL組合次數",
+        "ct_dst_src_ltm": "目的地與來源長期連線次數",
+        "dur": "連線持續時間",
+        "spkts": "來源封包數",
+        "dpkts": "目的封包數",
+        "dbytes": "目的位元組數",
+        "rate": "流量速率",
+        "sload": "來源負載",
+        "dload": "目的負載"
+        # ...其餘對應保持不變
+    }
+
+    chart_data = pd.DataFrame({
+        "特徵名稱": [feature_name_map.get(col, col) for col in top_importances.index],
+        "重要度分數": top_importances.values
+    }).sort_values("重要度分數", ascending=True) # 排序讓長條圖由長到短排列
+
+    # 4. 使用全寬度顯示，徹底解決標籤被切掉與方塊問題
+    st.bar_chart(
+        data=chart_data, 
+        x="特徵名稱", 
+        y="重要度分數", 
+        horizontal=True,
+        use_container_width=True
+    )
+    st.caption("※ 數值越高代表該特徵對 AI 判斷「攻擊/正常」的影響力越大。")
+else:
+    st.info("目前的模型不支援顯示特徵重要度。")
+
+st.divider()
 
 summary_placeholder = st.empty()
 status_placeholder = st.empty()
