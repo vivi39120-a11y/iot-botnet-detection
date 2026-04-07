@@ -55,27 +55,21 @@ except Exception as e:
 # 2. 側邊欄
 # -----------------------------
 st.sidebar.header("控制面板")
-sim_speed = st.sidebar.slider("模擬速度（秒）", 0.1, 2.0, 0.5)
-num_samples = st.sidebar.number_input("樣本數", min_value=5, max_value=100, value=20, step=1)
-attack_ratio = st.sidebar.slider("模擬攻擊比例", min_value=0.05, max_value=0.50, value=0.15, step=0.05)
-burst_mode = st.sidebar.checkbox("啟用攻擊爆發模式", value=True)
-
+sim_speed = st.sidebar.slider("每筆資料顯示間隔（秒）", 0.1, 2.0, 0.5)
+num_samples = st.sidebar.number_input("模擬筆數", min_value=5, max_value=100, value=20, step=1)
+attack_ratio = st.sidebar.slider("攻擊資料比例", min_value=0.05, max_value=0.50, value=0.15, step=0.05)
+burst_mode = st.sidebar.checkbox("模擬短時間攻擊增加", value=True)
 sample_size = st.sidebar.number_input("展示資料筆數", min_value=1000, max_value=20000, value=5000, step=1000)
-fixed_sample = st.sidebar.checkbox("固定展示抽樣", value=False)
-sample_seed = st.sidebar.number_input("固定抽樣種子", min_value=0, max_value=999999, value=42, step=1)
 
 # -----------------------------
 # 3. 載入並清理資料
 # -----------------------------
 @st.cache_data
-def load_and_clean_data(sample_size, fixed_sample, sample_seed):
+def load_and_clean_data(sample_size):
     df = pd.read_csv("archive/UNSW_NB15_testing-set.csv")
 
     if sample_size < len(df):
-        if fixed_sample:
-            df = df.sample(n=int(sample_size), random_state=int(sample_seed))
-        else:
-            df = df.sample(n=int(sample_size))
+        df = df.sample(n=int(sample_size))
 
     df = df.reset_index(drop=True)
     display_df = df.copy()
@@ -91,7 +85,6 @@ def load_and_clean_data(sample_size, fixed_sample, sample_seed):
         try:
             X[categorical_cols] = encoder.transform(X[categorical_cols])
         except Exception:
-            # 避免編碼器遇到未見類別直接炸掉
             for col in categorical_cols:
                 if col in X.columns:
                     X[col] = pd.factorize(X[col])[0]
@@ -105,7 +98,7 @@ def load_and_clean_data(sample_size, fixed_sample, sample_seed):
     return display_df, X
 
 try:
-    display_df, processed_df = load_and_clean_data(sample_size, fixed_sample, sample_seed)
+    display_df, processed_df = load_and_clean_data(sample_size)
 except Exception as e:
     st.error(f"資料前處理失敗：{e}")
     st.stop()
@@ -178,15 +171,13 @@ def rule_based_screening(orig_row):
         triggered_rules.append("Large destination packet count")
         rule_score += 1
 
-    if dur is not None and sbytes is not None:
-        if dur < 0.1 and sbytes > 10000:
-            triggered_rules.append("Burst source traffic")
-            rule_score += 2
+    if dur is not None and sbytes is not None and dur < 0.1 and sbytes > 10000:
+        triggered_rules.append("Burst source traffic")
+        rule_score += 2
 
-    if dur is not None and dbytes is not None:
-        if dur < 0.1 and dbytes > 10000:
-            triggered_rules.append("Burst destination traffic")
-            rule_score += 2
+    if dur is not None and dbytes is not None and dur < 0.1 and dbytes > 10000:
+        triggered_rules.append("Burst destination traffic")
+        rule_score += 2
 
     if ct_srv_src is not None and ct_srv_src > 20:
         triggered_rules.append("High repeated service access")
@@ -244,12 +235,12 @@ if not attack_pool:
 # -----------------------------
 # 7. 頁面佈局與資料視覺化
 # -----------------------------
-st.title("物聯網惡意流量偵測系統")
+st.title("物聯網惡意流量偵測模擬系統")
 st.caption("參考市面上 IoT 安全產品流程的簡易監控模擬：規則初篩 + 模型判斷 + 風險分級")
 st.caption(f"模型：{model_name} ｜ 訓練資料：{data_path}")
 
-# --- 第一層：資料集總覽 (左圖右表) ---
-st.header("1. 資料集流量分布 (Dataset Overview)")
+# --- 第一層：資料集總覽 ---
+st.header("資料集流量分布")
 dist_col1, dist_col2 = st.columns([1.2, 1])
 
 label_series = get_label_series(display_df)
@@ -299,8 +290,8 @@ with dist_col2:
 
 st.divider()
 
-# --- 第二層：模型分析 (全寬度展示) ---
-st.header("2. 模型關鍵特徵 (Feature Importance)")
+# --- 第二層：模型分析 ---
+st.header("模型關鍵特徵")
 
 if hasattr(model, "feature_importances_"):
     feature_name_map = {
@@ -360,13 +351,13 @@ if hasattr(model, "feature_importances_"):
     fig_bar.update_layout(
         margin=dict(l=200, r=20, t=20, b=20),
         yaxis={"title": ""},
-        xaxis={"title": "重要度影響力"},
+        xaxis={"title": "重要度"},
         showlegend=False,
         coloraxis_showscale=False
     )
 
     st.plotly_chart(fig_bar, use_container_width=True)
-    st.caption("※ 數值越高代表該特徵對 AI 判斷「攻擊/正常」的影響力越大。")
+    st.caption("※ 數值越高代表特徵對模型判斷「攻擊/正常」的影響力越大。")
 else:
     st.info("目前的模型不支援顯示特徵重要度。")
 
@@ -398,11 +389,6 @@ if st.button("開始監控演示"):
     alert_log = []
     stats_history = []
     attack_type_counter = {}
-
-    show_cols = pick_existing_columns(
-        display_df,
-        ["proto", "service", "state", "spkts", "dpkts", "sbytes", "dbytes", "rate"]
-    )[:6]
 
     normal_queue = normal_pool.copy()
     attack_queue = attack_pool.copy()
