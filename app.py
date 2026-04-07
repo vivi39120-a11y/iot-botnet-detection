@@ -65,9 +65,11 @@ except Exception as e:
 st.sidebar.header("控制面板")
 sim_speed = st.sidebar.slider("每筆資料顯示間隔（秒）", 0.1, 2.0, 0.5)
 num_samples = st.sidebar.number_input("模擬筆數", min_value=5, max_value=100, value=20, step=1)
-attack_ratio = st.sidebar.slider("攻擊資料比例", min_value=0.05, max_value=0.50, value=0.15, step=0.05)
-burst_mode = st.sidebar.checkbox("模擬短時間攻擊增加", value=True)
 sample_size = st.sidebar.number_input("展示資料筆數", min_value=1000, max_value=20000, value=5000, step=1000)
+
+# 固定設定：基礎攻擊比例 5%，並啟用爆發攻擊模擬
+attack_ratio = 0.05
+burst_mode = True
 
 # -----------------------------
 # 3. 載入並清理資料
@@ -409,10 +411,11 @@ if st.button("開始監控演示"):
     attack_ptr = 0
 
     if int(num_samples) >= 10:
-        burst_start = random.randint(5, max(5, int(num_samples) - 4))
-        burst_end = min(burst_start + 3, int(num_samples))
+        burst_start = max(1, int(num_samples * 0.4))
+        burst_end = min(burst_start + 5, int(num_samples))
     else:
-        burst_start, burst_end = -1, -1
+        burst_start = max(1, int(num_samples * 0.4))
+        burst_end = min(burst_start + 2, int(num_samples))
 
     for i in range(int(num_samples)):
         if burst_mode and burst_start <= i < burst_end:
