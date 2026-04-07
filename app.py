@@ -5,6 +5,7 @@ import time
 import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pathlib import Path
 import plotly.express as px
 import matplotlib
 
@@ -13,12 +14,19 @@ matplotlib.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="IoT 安全專案", layout="wide")
 
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR / "iot_model.pkl"
+DATA_PATH = BASE_DIR / "archive" / "UNSW_NB15_testing-set.csv"
+
 # -----------------------------
 # 1. 載入模型包
 # -----------------------------
 @st.cache_resource
 def load_trained_assets():
-    package = joblib.load("iot_model.pkl")
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(f"找不到模型檔案：{MODEL_PATH}")
+
+    package = joblib.load(MODEL_PATH)
     return (
         package["model"],
         package["features"],
@@ -66,7 +74,10 @@ sample_size = st.sidebar.number_input("展示資料筆數", min_value=1000, max_
 # -----------------------------
 @st.cache_data
 def load_and_clean_data(sample_size):
-    df = pd.read_csv("archive/UNSW_NB15_testing-set.csv")
+    if not DATA_PATH.exists():
+        raise FileNotFoundError(f"找不到資料檔案：{DATA_PATH}")
+
+    df = pd.read_csv(DATA_PATH)
 
     if sample_size < len(df):
         df = df.sample(n=int(sample_size))
