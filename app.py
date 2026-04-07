@@ -2,12 +2,12 @@ import streamlit as st
 import joblib
 import pandas as pd
 import time
-import matplotlib.pyplot as plt
 import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import plotly.express as px
 import matplotlib
+
 matplotlib.rcParams["font.sans-serif"] = ["Microsoft JhengHei"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
@@ -22,11 +22,11 @@ def load_trained_assets():
     return (
         package["model"],
         package["features"],
-        package["categorical_cols"],
-        package["numeric_cols"],
-        package["encoder"],
-        package["label_encoder"],
-        package["drop_cols"],
+        package.get("categorical_cols", []),
+        package.get("numeric_cols", []),
+        package.get("encoder", None),
+        package.get("label_encoder", None),
+        package.get("drop_cols", []),
         package.get("normal_labels", ["Normal"]),
         package.get("model_name", "RandomForestClassifier"),
         package.get("data_path", "Unknown"),
@@ -87,8 +87,14 @@ def load_and_clean_data(sample_size, fixed_sample, sample_seed):
         if col in X.columns:
             X[col] = X[col].astype(str)
 
-    if categorical_cols:
-        X[categorical_cols] = encoder.transform(X[categorical_cols])
+    if categorical_cols and encoder is not None:
+        try:
+            X[categorical_cols] = encoder.transform(X[categorical_cols])
+        except Exception:
+            # 避免編碼器遇到未見類別直接炸掉
+            for col in categorical_cols:
+                if col in X.columns:
+                    X[col] = pd.factorize(X[col])[0]
 
     for col in numeric_cols:
         if col in X.columns:
@@ -235,7 +241,6 @@ if not normal_pool:
 if not attack_pool:
     attack_pool = display_df.index.tolist()
 
-
 # -----------------------------
 # 7. 頁面佈局與資料視覺化
 # -----------------------------
@@ -247,55 +252,57 @@ st.caption(f"模型：{model_name} ｜ 訓練資料：{data_path}")
 st.header("1. 資料集流量分布 (Dataset Overview)")
 dist_col1, dist_col2 = st.columns([1.2, 1])
 
+label_series = get_label_series(display_df)
+counts = None
+
 with dist_col1:
-    # 稍微調整畫布大小
-    fig, ax = plt.subplots(figsize=(7, 5)) 
-    label_series = get_label_series(display_df)
-    
     if label_series is not None:
-        counts = label_series.value_counts()
-        # 繪製經典圓餅圖
-        counts.plot.pie(
-            autopct="%1.1f%%", 
-            ax=ax, 
-            startangle=140, 
-            pctdistance=0.75,    # 百分比數字的位置 (0-1 之間)
-            labeldistance=1.1,   # 類別文字標籤的位置 (大於 1 會往圓外移)
-            textprops={'fontsize': 10}
+        counts = label_series.value_counts().reset_index()
+        counts.columns = ["類別", "樣本數"]
+
+        fig_pie = px.pie(
+            counts,
+            values="樣本數",
+            names="類別",
+            hole=0.4,
+            color_discrete_sequence=px.colors.qualitative.Pastel
         )
-        ax.set_ylabel("")
-        
-        # --- 關鍵修改：刪除以下這兩行，圓餅圖就不會變甜甜圈 ---
-        # centre_circle = plt.Circle((0,0), 0.70, fc='white')
-        # fig.gca().add_artist(centre_circle)
-        
-        # 強制緊湊佈局，防止標籤文字超出圖片邊界
-        plt.tight_layout()
+
+        fig_pie.update_layout(
+            margin=dict(l=20, r=20, t=30, b=20),
+            legend=dict(
+                orientation="v",
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=1.05
+            ),
+            height=400
+        )
+
+        st.plotly_chart(fig_pie, use_container_width=True)
     else:
-        ax.text(0.5, 0.5, "找不到標籤欄位", ha="center")
-    
-    st.pyplot(fig)
+        st.info("找不到標籤欄位")
 
 with dist_col2:
     st.write("#### 流量統計詳細資料")
-    if label_series is not None:
-        # 建立文字版比例表格
+    if label_series is not None and counts is not None and not counts.empty:
+        total_samples = counts["樣本數"].sum()
         dist_df = pd.DataFrame({
-            "類別": counts.index,
-            "樣本數": counts.values,
-            "百分比": [f"{(v/counts.sum())*100:.1f}%" for v in counts.values]
-        })
-        st.table(dist_df) # 使用靜態表格呈現，方便閱讀
+            "類別": counts["類別"],
+            "樣本數": counts["樣本數"],
+            "百分比": counts["樣本數"].apply(lambda v: f"{(v / total_samples) * 100:.1f}%")
+        }).reset_index(drop=True)
+        st.table(dist_df)
     else:
         st.info("暫無資料")
 
-st.divider() # 畫一條橫向分隔線
+st.divider()
 
 # --- 第二層：模型分析 (全寬度展示) ---
 st.header("2. 模型關鍵特徵 (Feature Importance)")
 
 if hasattr(model, "feature_importances_"):
-    # 1. 先定義對照表 (放在最前面確保後面抓得到)
     feature_name_map = {
         "dttl": "目的TTL",
         "service": "服務類型",
@@ -331,37 +338,33 @@ if hasattr(model, "feature_importances_"):
         "trans_depth": "HTTP請求/響應深度"
     }
 
-    # 2. 取得重要度數據
     importances = pd.Series(model.feature_importances_, index=trained_features)
     top_n = 12
     top_importances = importances.nlargest(top_n)
 
-    # 3. 建立 DataFrame，同時轉換中文
     chart_data = pd.DataFrame({
         "特徵名稱": [feature_name_map.get(col, col) for col in top_importances.index],
         "重要度分數": top_importances.values
     }).sort_values("重要度分數", ascending=True)
 
-    # 4. 使用 Plotly 繪圖
     fig_bar = px.bar(
-        chart_data, 
-        x="重要度分數", 
-        y="特徵名稱", 
-        orientation='h',
-        text_auto='.3f',
-        color="重要度分數",           # 增加顏色深淺變化，看起來更專業
+        chart_data,
+        x="重要度分數",
+        y="特徵名稱",
+        orientation="h",
+        text_auto=".3f",
+        color="重要度分數",
         color_continuous_scale="Blues"
     )
-    
-    # 5. 關鍵設定：調整左邊距 (margin-l)，確保長文字不被切掉
+
     fig_bar.update_layout(
-        margin=dict(l=200, r=20, t=20, b=20), # 如果字還是被切，就把 180 再調大
-        yaxis={'title': ''},
-        xaxis={'title': '重要度影響力'},
+        margin=dict(l=200, r=20, t=20, b=20),
+        yaxis={"title": ""},
+        xaxis={"title": "重要度影響力"},
         showlegend=False,
-        coloraxis_showscale=False # 隱藏右邊的顏色條，保持畫面簡潔
+        coloraxis_showscale=False
     )
-    
+
     st.plotly_chart(fig_bar, use_container_width=True)
     st.caption("※ 數值越高代表該特徵對 AI 判斷「攻擊/正常」的影響力越大。")
 else:
@@ -436,11 +439,14 @@ if st.button("開始監控演示"):
         row = processed_df.iloc[idx]
         orig_row = display_df.iloc[idx]
 
-        input_data = row.values.reshape(1, -1)
-        pred_encoded = model.predict(input_data)[0]
+        input_df = pd.DataFrame([row.values], columns=processed_df.columns)
+        pred_encoded = model.predict(input_df)[0]
 
         if label_encoder is not None:
-            pred_label = label_encoder.inverse_transform([pred_encoded])[0]
+            try:
+                pred_label = label_encoder.inverse_transform([pred_encoded])[0]
+            except Exception:
+                pred_label = pred_encoded
         else:
             pred_label = pred_encoded
 
@@ -474,7 +480,6 @@ if st.button("開始監控演示"):
             "風險等級": get_risk_badge(risk_level),
             "最終判定": "ATTACK" if is_attack else "NORMAL"
         }
-        # 改成保留全部模擬結果
         results_log.insert(0, event_item)
 
         if risk_level in ["HIGH", "MEDIUM"]:
@@ -488,7 +493,6 @@ if st.button("開始監控演示"):
                 "命中規則": rule_text
             })
 
-        # 改成全部測試過程的累積結果
         stats_history.append({
             "step": total_count,
             "Normal": normal_count,
@@ -525,7 +529,7 @@ if st.button("開始監控演示"):
             )
 
         with alert_placeholder.container():
-            st.markdown("### 中高風險警示（共 {len(alert_log)} 筆）")
+            st.markdown(f"### 中高風險警示（共 {len(alert_log)} 筆）")
 
             if alert_log:
                 alert_df = pd.DataFrame(alert_log)
